@@ -23,13 +23,13 @@ from pyRAPL import Result
 from pyRAPL.outputs import Output
 
 
-def print_energy(energy):
+def print_energy(energies):
     s = ""
-    for i in range(len(energy)):
-        if isinstance(energy[i], float):
-            s = s + f"\n\tsocket {i} : {energy[i]: 10.4f} uJ"
+    for i, (energy, conf) in enumerate(energies):
+        if isinstance(energy, float):
+            s = s + f"\n\tsocket {i} : {energy / 1e6: e} J (±{conf / 1e6: .4e})"
         else:
-            s = s + f"\n\tsocket {i} : {energy[i]} uJ"
+            s = s + f"\n\tsocket {i} : {energy} uJ"
     return s
 
 
@@ -50,12 +50,13 @@ class PrintOutput(Output):
         if self._raw:
             return str(result)
         else:
-            s = f"""Label : {result.label}\nBegin : {time.ctime(result.timestamp)}\nDuration : {result.duration:10.4f} us"""
+            # TODO: change this to print the confidence interval
+            s = f"""Label : {result.label}\nBegin : {time.ctime(result.timestamp)}\nDuration : {result.duration:.4e} s (±{result.duration_conf: .4e})"""
             if result.pkg is not None:
-                s += f"""\n-------------------------------\nPKG :{print_energy(result.pkg)}"""
+                s += f"""\n-------------------------------\nPKG :{print_energy(zip(result.pkg, result.pkg_conf))}"""
             if result.dram is not None:
-                s += f"""\n-------------------------------\nDRAM :{print_energy(result.dram)}"""
-                s += '\n-------------------------------'
+                s += f"""\n-------------------------------\nDRAM :{print_energy(zip(result.dram, result.dram_conf))}"""
+                s += "\n-------------------------------"
             return s
 
     def add(self, result: Result):

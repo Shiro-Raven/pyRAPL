@@ -38,7 +38,8 @@ class CSVOutput(BufferedOutput):
 
     :param append: Turn it to False to delete file if it already exist.
     """
-    def __init__(self, filename: str, separator: str = ',', append: bool = True):
+
+    def __init__(self, filename: str, separator: str = ",", append: bool = True):
         BufferedOutput.__init__(self)
         self._separator = separator
         self._buffer = []
@@ -46,9 +47,11 @@ class CSVOutput(BufferedOutput):
 
         # Create file with header if it not exist or if append is False
         if not os.path.exists(self._filename) or not append:
-            header = separator.join(list(Result.__annotations__.keys()) + ['socket']) + '\n'
+            header = (
+                separator.join(list(Result.__annotations__.keys()) + ["socket"]) + "\n"
+            )
 
-            with open(self._filename, 'w+') as csv_file:
+            with open(self._filename, "w+") as csv_file:
                 csv_file.writelines(header)
 
     def _output_buffer(self):
@@ -56,7 +59,11 @@ class CSVOutput(BufferedOutput):
         Append the data at the end of the csv file
         :param data: data to write
         """
-        with open(self._filename, 'a+') as csv_file:
+        with open(self._filename, "a+") as csv_file:
+            breakpoint()
             for data in self._buffer:
-                line = self._separator.join([str(column) for column in data.values()]) + '\n'
+                line = (
+                    self._separator.join([str(column) for column in data.values()])
+                    + "\n"
+                )
                 csv_file.writelines(line)

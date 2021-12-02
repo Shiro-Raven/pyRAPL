@@ -20,6 +20,8 @@
 import functools
 
 from time import time_ns
+
+import pandas as pd
 from pyRAPL import Result
 from pyRAPL.outputs import PrintOutput, Output
 import pyRAPL
@@ -32,7 +34,7 @@ def empty_energy_result(energy_result):
     return functools.reduce(lambda acc, x: acc or (x >= 0), energy_result, False)
 
 
-class Measurement:
+class Measurement(object):
     """
     measure the energy consumption of devices on a bounded period
 
@@ -45,12 +47,17 @@ class Measurement:
 
     def __init__(self, label: str, output: Output = None):
         self.label = label
-        self._energy_begin = None
-        self._ts_begin = None
-        self._results = None
         self._output = output if output is not None else PrintOutput()
-
         self._sensor = pyRAPL._sensor
+
+    @property
+    def result(self) -> Result:
+        """
+        Access to the measurement data
+        """
+        if self._results is None:
+            raise AttributeError("No result measured yet.")
+        return self._results
 
     def begin(self):
         """
@@ -60,14 +67,16 @@ class Measurement:
         self._ts_begin = time_ns()
 
     def __enter__(self):
-        """use Measurement as a context """
+        """use Measurement as a context"""
         self.begin()
 
-    def __exit__(self, exc_type, exc_value, traceback):
-        """use Measurement as a context """
+    def __exit__(self, exc_type):
+        """use Measurement as a context"""
         self.end()
-        if(exc_type is None):
+        if exc_type is None:
             self.export()
+
+        return
 
     def end(self):
         """
@@ -79,11 +88,29 @@ class Measurement:
         delta = energy_end - self._energy_begin
         duration = ts_end - self._ts_begin
         pkg = delta[0::2]  # get odd numbers
-        pkg = pkg if empty_energy_result(pkg) else None  # set result to None if its contains only -1
+        pkg = (
+            pkg if empty_energy_result(pkg) else None
+        )  # set result to None if its contains only -1
         dram = delta[1::2]  # get even numbers
-        dram = dram if empty_energy_result(dram) else None  # set result to None if its contains only -1
+        dram = (
+            dram if empty_energy_result(dram) else None
+        )  # set result to None if its contains only -1
 
-        self._results = Result(self.label, self._ts_begin / 1000000000, duration / 1000, pkg, dram)
+        return duration, pkg, dram
+
+    def create_result(
+        self, duration, pkg, dram, duration_conf=None, pkg_conf=None, dram_conf=None
+    ):
+        self._results = Result(
+            self.label,
+            self._ts_begin / 1000000000,
+            duration / 1e9,
+            pkg,
+            dram,
+            duration_conf / 1000000000,
+            pkg_conf,
+            dram_conf,
+        )
 
     def export(self, output: Output = None):
         """
@@ -91,38 +118,93 @@ class Measurement:
 
         :param output: output that will handle the measure, if None, the default output will be used
         """
-        if output is None:
-            self._output.add(self._results)
-        else:
-            output.add(self._results)
-
-    @property
-    def result(self) -> Result:
-        """
-        Access to the measurement data
-        """
-        return self._results
+        output_var = self._output if output is None else output
+        output_var.add(self._results)
 
 
-def measureit(_func=None, *, output: Output = None, number: int = 1):
+def measureit(
+    _func=None, *, output: Output = None, number: int = 1, method: str = "global"
+):
     """
     Measure the energy consumption of monitored devices during the execution of the decorated function (if multiple runs it will measure the mean energy)
 
     :param output: output instance that will receive the power consummation data
     :param number: number of iteration in the loop in case you need multiple runs or the code is too fast to be measured
+    :param method: whether to return measure metric as a global mean or with confidence intervals
     """
 
     def decorator_measure_energy(func):
+        def _compute_stats(df: pd.DataFrame):
+            from math import sqrt
+
+            def _compute_array_mean(column_prefix):
+                res = []
+                for column in df.columns:
+                    if not column.startswith(column_prefix):
+                        continue
+
+                    res.append(df[column].mean(axis=0))
+
+                return res
+
+            def _compute_array_conf(column_prefix):
+                res = []
+                for column in df.columns:
+                    if not column.startswith(column_prefix):
+                        continue
+
+                    res.append(1.96 * df[column].std(axis=0) / denom)
+
+                return res
+
+            denom = sqrt(df.count(axis=0)[0])
+            return (
+                df["Duration"].std(axis=0),
+                _compute_array_mean("Pkg"),
+                _compute_array_mean("Dram"),
+                1.96 * df["Duration"].std(axis=0) / denom,
+                _compute_array_conf("Pkg"),
+                _compute_array_conf("Dram"),
+            )
+
         @functools.wraps(func)
         def wrapper_measure(*args, **kwargs):
             sensor = Measurement(func.__name__, output)
-            sensor.begin()
-            for i in range(number):
-                val = func(*args, **kwargs)
-            sensor.end()
-            sensor._results = sensor._results / number
+
+            if method == "global":
+                sensor.begin()
+                for _ in range(number):
+                    val = func(*args, **kwargs)
+                sensor.create_result(*sensor.end())
+                sensor._results = sensor._results / number
+            elif method == "confidence":
+                try:
+                    import pandas as pd
+                except ImportError:
+                    raise ImportError("You need Pandas to use this method")
+
+                for i in range(number):
+                    sensor.begin()
+                    val = func(*args, **kwargs)
+                    dur, pkg, dram = sensor.end()
+
+                    if i == 0:
+                        df = pd.DataFrame(
+                            index=range(number),
+                            columns=["Duration"]
+                            + [f"Pkg_{j}" for j in range(len(pkg))]
+                            + [f"Dram_{j}" for j in range(len(dram))],
+                        )
+
+                    df.iloc[i] = dur, *pkg, *dram
+
+                sensor.create_result(*_compute_stats(df))
+            else:
+                raise ValueError("Unknown measurement method.")
+
             sensor.export()
             return val
+
         return wrapper_measure
 
     if _func is None:

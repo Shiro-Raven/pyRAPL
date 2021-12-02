@@ -37,14 +37,18 @@ class Result:
     :var dram: list of the RAM energy consumption -expressed in seconds- (one value for each socket) if None, no RAM energy consumption was recorded
     :vartype dram: Optional[List[float]]
     """
+
     label: str
     timestamp: float
     duration: float
     pkg: Optional[List[float]] = None
     dram: Optional[List[float]] = None
+    duration_conf: float = None
+    pkg_conf: Optional[List[float]] = None
+    dram_conf: Optional[List[float]] = None
 
     def __truediv__(self, number: int):
-        """ devide all the attributes by the number number , used to measure one instance if we run the test inside a loop
+        """devide all the attributes by the number number , used to measure one instance if we run the test inside a loop
         :param number: inteager
         """
 

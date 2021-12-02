@@ -44,11 +44,13 @@ class BufferedOutput(Output):
         :param result: data that must be added to the buffer
         """
         x = dict(vars(result))
-        x['timestamp'] = x['timestamp']
+        x["timestamp"] = x["timestamp"]
         for i in range(len(result.pkg)):
-            x['socket'] = i
-            x['pkg'] = result.pkg[i]
-            x['dram'] = result.dram[i]
+            x["socket"] = i
+            x["pkg"] = result.pkg[i]
+            x["dram"] = result.dram[i]
+            x["pkg_conf"] = result.pkg_conf[i]
+            x["dram_conf"] = result.dram_conf[i]
             self._buffer.append(x.copy())
 
     @property
